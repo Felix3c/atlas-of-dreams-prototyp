@@ -1984,7 +1984,7 @@ function applyMenuMode() {
     btnStartEl.parentNode.insertBefore(btnNewJourney, btnStartEl); // New Journey steht oben
   } else {
     btnStartEl.classList.remove('secondary');
-    btnStartEl.textContent = 'Enter the Arena';
+    btnStartEl.textContent = 'Enter Malis';
   }
 }
 applyMenuMode();

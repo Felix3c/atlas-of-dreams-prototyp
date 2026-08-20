@@ -11,7 +11,7 @@
   // editor.js (DEFAULT_NAME) und HUD dieselbe Quelle lesen.
   // Titel von Felix entschieden (13.08.2026): „Atlas of Dreams" — der Atlas aus
   // dem Kindheitsspiel der Brüder + der Traum als Kernmechanik (WELT.md).
-  window.GAME_META = { title: 'Atlas of Dreams', tagline: 'Marine Assault', hero: 'Rook' };
+  window.GAME_META = { title: 'Atlas of Dreams', tagline: 'Design Prototype · Malis, The Still Sea', hero: 'Rook' };
   document.title = window.GAME_META.title;
   // Dev-Werkzeug (R19, kein Spiel-Feature): ?rafshim=1 ersetzt requestAnimationFrame
   // durch eine MessageChannel-Schleife (~20 fps). Grund: in einem verdeckten/nicht
@@ -791,9 +791,9 @@
   <div id="compass" class="hud"></div>
 
   <div id="hud-abilities" class="hud">
-    <div class="ability" id="ab-pistol"><div class="cd"></div><div class="key">LMB</div><div class="name">Pistol</div></div>
-    <div class="ability" id="ab-bazooka"><div class="cd"></div><div class="key">RMB</div><div class="name">Bazooka</div></div>
-    <div class="ability" id="ab-gatling"><div class="cd"></div><div class="key">Q</div><div class="name">Gatling</div></div>
+    <div class="ability" id="ab-pistol"><div class="cd"></div><div class="key">LMB</div><div class="name">Strike</div></div>
+    <div class="ability" id="ab-bazooka"><div class="cd"></div><div class="key">RMB</div><div class="name">Heavy Blow</div></div>
+    <div class="ability" id="ab-gatling"><div class="cd"></div><div class="key">Q</div><div class="name">Flurry</div></div>
   </div>
 
   <div id="hud-boss" class="hud">
@@ -879,9 +879,9 @@
            Strg+S/D/A oeffnen Browser-Dialoge, die den Fokus klauen. Details in main.js. -->
       <span class="k">Run</span><span>R — toggle (village)</span>
       <span class="k">Jump</span><span>Space</span>
-      <span class="k">Pistol</span><span>Left Click</span>
-      <span class="k">Bazooka</span><span>Right Click</span>
-      <span class="k">Gatling</span><span>Q</span>
+      <span class="k">Strike</span><span>Left Click</span>
+      <span class="k">Heavy Blow</span><span>Right Click</span>
+      <span class="k">Flurry</span><span>Q</span>
       <span class="k">Overdrive</span><span>F (meter full)</span>
       <!-- R21 Aufgabe A: Controller-Zeile — Standard-Mapping, Details in main.js
            (RT Bazooka, LT Gatling, RB Overdrive, L3 Run sind Builder-Zugabe). -->
@@ -892,7 +892,7 @@
          rueckt VOR den Start-Knopf, der dann ehrlich "Free Play" heisst; diese
          Zeile erklaert den Unterschied. Ohne Traum bleibt alles wie bisher. -->
     <div id="menu-returning-note" class="hidden">Your story is told — begin a new one, or roam the island in Free Play.</div>
-    <button id="btn-start">Enter the Arena</button>
+    <button id="btn-start">Enter Malis</button>
     <!-- R18-Reparatur: sichtbarer Neustart-Weg fuer Rueckkehrer mit gespeichertem
          Traum (aod_dream) — main.js blendet ihn nur dann ein und ruft resetDream()
          + startGame(). ?resetdream=1 bleibt als Test-Werkzeug, ist aber kein
