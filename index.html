@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas of Dreams — Design-Prototyp</title>
+<script>
+  // Entbrandung (R16): Titel/Tagline leben in EINER Konstante — Felix' finale
+  // Titel-Entscheidung steht aus (RUNDE16-AUFTRAG, Aufgabe A1); der Tausch ist
+  // dann genau diese eine Zeile. Der Held-Standardname steht daneben, damit
+  // editor.js (DEFAULT_NAME) und HUD dieselbe Quelle lesen.
+  // Titel von Felix entschieden (13.08.2026): „Atlas of Dreams" — der Atlas aus
+  // dem Kindheitsspiel der Brüder + der Traum als Kernmechanik (WELT.md).
+  window.GAME_META = { title: 'Atlas of Dreams', tagline: 'Marine Assault', hero: 'Rook' };
+  document.title = window.GAME_META.title;
+  // Dev-Werkzeug (R19, kein Spiel-Feature): ?rafshim=1 ersetzt requestAnimationFrame
+  // durch eine MessageChannel-Schleife (~20 fps). Grund: in einem verdeckten/nicht
+  // komponierten Fenster feuert Chrome kein rAF — der Spieltick steht, und
+  // automatisierte Playtest-Sonden (R18: "1-fps-Falle") koennen nichts pruefen.
+  // Ohne den Parameter aendert sich exakt nichts.
+  if (new URLSearchParams(location.search).get('rafshim') === '1') {
+    const rafCbs = [];
+    window.requestAnimationFrame = (cb) => rafCbs.push(cb);
+    const rafCh = new MessageChannel();
+    let rafLast = 0;
+    rafCh.port1.onmessage = () => {
+      const now = performance.now();
+      if (now - rafLast >= 50) {
+        rafLast = now;
+        const list = rafCbs.splice(0);
+        for (const cb of list) cb(now);
+      }
+      rafCh.port2.postMessage(0);
+    };
+    rafCh.port2.postMessage(0);
+  }
+  addEventListener('DOMContentLoaded', () => {
+    const h1 = document.querySelector('#screen-start h1');
+    const tag = document.querySelector('#screen-start .tagline');
+    if (h1) h1.textContent = window.GAME_META.title;
+    if (tag) tag.textContent = window.GAME_META.tagline;
+  });
+</script>
+<style>
+  :root {
+    --hud-bg: rgba(10, 14, 20, 0.35);
+    --hud-border: rgba(255, 255, 255, 0.10);
+    --hud-text: rgba(240, 244, 248, 0.92);
+    --hud-dim: rgba(240, 244, 248, 0.55);
+    --accent: #ff5a3c;
+    --accent-soft: rgba(255, 90, 60, 0.85);
+    --hp-color: #ffffff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14; }
+  body {
+    font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+    color: var(--hud-text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  #game-canvas { position: fixed; inset: 0; display: block; }
+
+  /* ---- vignette + warm grade + damage feedback ---- */
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    background: radial-gradient(ellipse at center,
+      transparent 55%, rgba(8, 6, 12, 0.30) 82%, rgba(6, 4, 10, 0.58) 100%);
+  }
+  #color-grade {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: linear-gradient(180deg, rgba(255, 176, 92, 0.05), rgba(255, 122, 64, 0.04) 55%, rgba(30, 18, 40, 0.06));
+    mix-blend-mode: soft-light;
+  }
+  /* persistent low-health vignette, opacity driven by JS each frame */
+  #lowhp-vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(190, 30, 20, 0.4) 100%);
+    opacity: 0;
+  }
+  /* Gefahrensinn danger pulse — sharp cyan-white edge flash right before an
+     enemy strike lands ("dodge NOW"); opacity driven by JS each frame */
+  #danger-vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(ellipse at center, transparent 62%, rgba(127, 219, 255, 0.28) 88%, rgba(255, 60, 40, 0.5) 100%);
+    opacity: 0;
+  }
+  /* OVERDRIVE screen edge — dezent red glow while the ultimate is active */
+  #overdrive-vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(ellipse at center, transparent 58%, rgba(210, 30, 20, 0.5) 100%);
+    opacity: 0; transition: opacity 0.06s ease-out;
+  }
+  /* hit flash — same gradient, pulses on damage (300ms ease-out) */
+  #damage-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(190, 30, 20, 0.4) 100%);
+    opacity: 0; transition: opacity 0.3s ease-out;
+  }
+  #damage-flash.active { opacity: 1; transition: opacity 0.05s ease-in; }
+
+  /* ---- HUD ---- */
+  .hud { position: fixed; z-index: 10; pointer-events: none; }
+  .hud, .hud * { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65); }
+  .label {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.25em;
+    text-transform: uppercase; color: var(--hud-dim);
+  }
+
+  /* ---- vitals bottom-left: big naked numeral ---- */
+  #hud-player { left: 28px; bottom: 26px; }
+  #hp-num {
+    display: block;
+    font-size: 46px; font-weight: 300; line-height: 1;
+    color: var(--hp-color);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  #hud-player .label { display: block; margin-top: 5px; }
+  #hud-player .bar {
+    margin-top: 7px;
+    height: 2px; width: 160px;
+    background: rgba(255, 255, 255, 0.25);
+    overflow: hidden;
+  }
+  #hud-player .bar .fill {
+    height: 100%; width: 100%;
+    background: var(--hp-color);
+    transition: width 0.18s ease-out;
+  }
+
+  /* ---- companion tag: slim line under player vitals ---- */
+  #companion-tag {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 10px;
+    border-left: 2px solid rgba(111, 224, 138, 0.55);
+    padding-left: 8px;
+  }
+  #companion-tag .companion-name {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.25em;
+    text-transform: uppercase; color: var(--hud-dim);
+  }
+  #companion-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(240, 244, 248, 0.4);
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+  #companion-tag.fighting #companion-dot {
+    background: #6fe08a;
+    box-shadow: 0 0 7px rgba(111, 224, 138, 0.9);
+  }
+  #companion-tag.downed #companion-dot { background: #d92b1c; }
+
+  /* ---- KAI banter: short line under the companion tag, fades in/out ---- */
+  #companion-banter {
+    margin-top: 4px;
+    padding-left: 10px;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+    color: rgba(240, 244, 248, 0.85);
+    font-style: italic;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  #companion-banter.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ---- Overdrive meter: builds via perfect dodges + landed hits ---- */
+  #hud-overdrive { margin-top: 10px; width: 160px; }
+  #hud-overdrive .label {
+    display: flex; align-items: center; gap: 6px;
+  }
+  #hud-overdrive .label .key {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
+    padding: 1px 5px; border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.25); color: var(--hud-text);
+  }
+  #hud-overdrive .od-bar {
+    margin-top: 6px; height: 5px; width: 100%;
+    background: rgba(255, 255, 255, 0.14); border-radius: 3px; overflow: hidden;
+  }
+  #hud-overdrive .od-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #ff8a3c, #ff3c1e);
+    transition: width 0.15s ease-out, background 0.2s ease-out;
+  }
+  #hud-overdrive.ready .od-fill {
+    background: linear-gradient(90deg, #fff2b0, #ff5a2e);
+    box-shadow: 0 0 12px rgba(255, 110, 40, 0.85);
+    animation: od-pulse 0.9s ease-in-out infinite;
+  }
+  #hud-overdrive.active .od-fill {
+    background: linear-gradient(90deg, #ffdcae, #ff2a1e);
+    box-shadow: 0 0 16px rgba(255, 60, 30, 0.9);
+  }
+  @keyframes od-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.45); }
+  }
+
+  /* ---- objective strip: top-center ---- */
+  #hud-objective {
+    top: 16px; left: 50%; transform: translateX(-50%);
+    padding: 8px 20px;
+    background: var(--hud-bg);
+    border: none; border-radius: 4px;
+    display: flex; align-items: stretch;
+  }
+  #hud-objective .col {
+    text-align: center; padding: 0 18px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  #hud-objective .col + .col { border-left: 1px solid rgba(255, 255, 255, 0.12); }
+  #hud-objective .val {
+    font-size: 15px; font-weight: 600; line-height: 1.2;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  }
+  #hud-objective .tag {
+    font-size: 9px; font-weight: 500; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--hud-dim); margin-top: 2px;
+  }
+  /* hidden data sources still written to by src/ui.js */
+  #obj-src { display: none; }
+  /* Friedensphase: eine ruhige Zeile statt Wave/Marines/K.O. — ui.setCalmObjective()
+     setzt/loescht die Klasse .calm auf #hud-objective. Die Ruhe-Spalte steht als
+     letztes Kind, damit .col + .col im Kampf keinen Rand an der linken Kante laesst;
+     als einzige sichtbare Spalte bekommt sie selbst keinen. */
+  #hud-objective .calm-only { display: none; }
+  #hud-objective.calm .calm-only { display: flex; border-left: none; }
+  #hud-objective.calm .col:not(.calm-only) { display: none; }
+
+  /* ---- compass strip under objective ---- */
+  #compass {
+    top: 58px; left: 50%; transform: translateX(-50%);
+    width: 240px; height: 20px; overflow: hidden;
+    background-repeat: repeat-x;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  }
+  #compass::after {
+    content: ""; position: absolute; left: 50%; top: 0;
+    width: 1px; height: 100%; background: var(--accent-soft);
+  }
+
+  /* ---- abilities: keycaps bottom-right ---- */
+  #hud-abilities { right: 24px; bottom: 28px; display: flex; gap: 8px; }
+  .ability {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 5px;
+    position: relative;
+  }
+  .ability .key {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--hud-text);
+  }
+  .ability .name {
+    position: absolute; left: 50%; top: calc(100% + 5px); transform: translateX(-50%);
+    font-size: 8px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--hud-dim); white-space: nowrap;
+    opacity: 0; transition: opacity 0.35s ease;
+  }
+  #hud-abilities.show-names .name { opacity: 1; }
+  /* cooldown: conic sweep. ui.js sets scaleY() inline; JS below converts it to --cd */
+  .ability .cd {
+    position: absolute; inset: 0;
+    border-radius: 4px;
+    transform: none !important;
+    background: conic-gradient(rgba(0, 0, 0, 0.55) var(--cd, 0%), transparent 0);
+    pointer-events: none;
+  }
+
+  /* ---- boss bar (below objective + compass) ---- */
+  #hud-boss {
+    left: 50%; top: 88px; transform: translateX(-50%);
+    width: min(460px, 56vw); text-align: center; display: none;
+  }
+  #boss-name {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.25em;
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  #hud-boss .bar { height: 2px; background: rgba(255, 255, 255, 0.22); overflow: hidden; }
+  #hud-boss .fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #d8b24a, #c23a2b);
+    transition: width 0.18s ease-out;
+  }
+
+  /* ---- wave banner ---- */
+  #wave-banner {
+    left: 50%; top: 34%; transform: translate(-50%, -50%);
+    font-size: 30px; font-weight: 300; letter-spacing: 0.3em; text-transform: uppercase;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7); text-align: center;
+    opacity: 0; transition: opacity 0.5s ease;
+  }
+  #wave-banner .sub {
+    font-size: 11px; letter-spacing: 0.28em; color: var(--hud-dim); margin-top: 10px;
+  }
+  #wave-banner.show { opacity: 1; }
+
+  /* ---- boss-intro letterbox (Runde 9): black bars close in while the camera
+       flies to the boss, input paused, enemies inert ---- */
+  .letterbox {
+    position: fixed; left: 0; right: 0; height: 0; background: #000;
+    z-index: 12; pointer-events: none;
+    transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  #letterbox-top { top: 0; }
+  #letterbox-bottom { bottom: 0; }
+  .letterbox.show { height: 12vh; }
+
+  /* ---- boss-intro name card: anime-style two-line reveal (title + big name) ---- */
+  #boss-intro-card {
+    position: fixed; left: 50%; top: 50%; z-index: 13; text-align: center;
+    transform: translate(-50%, -50%) scale(0.92); opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  #boss-intro-card.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #boss-intro-card .bic-title {
+    font-size: 14px; font-weight: 700; letter-spacing: 0.55em; text-transform: uppercase;
+    color: rgba(240, 244, 248, 0.75); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  }
+  #boss-intro-card .bic-name {
+    margin-top: 8px; display: inline-block;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 56px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    color: #f4f0ea; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.85);
+    border-bottom: 3px solid var(--accent); padding-bottom: 12px;
+  }
+
+  /* ---- victory banner: bigger sibling of wave-banner, shown during the win pose ---- */
+  #victory-banner {
+    position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%);
+    z-index: 11; text-align: center; pointer-events: none;
+    font-size: 56px; font-weight: 800; letter-spacing: 0.28em; text-transform: uppercase;
+    color: #f4f0ea; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.85), 0 0 40px rgba(255, 90, 60, 0.45);
+    opacity: 0; transition: opacity 0.5s ease;
+  }
+  #victory-banner.show { opacity: 1; }
+
+  /* ---- Friedensphase: Interakt-Angebot am Wachturm (Runde 15) ----
+     Der Turm ist der einzige Weg, Welle 1 vor Ablauf der 45 s zu starten. Naehe allein
+     loest nichts aus (sonst beendet blindes Vorwaertslaufen die Ruhe nach 4 s) — der
+     Prompt nennt die Regel genau dort, wo sie gilt, und E bestaetigt sie.
+     Unter der Bildmitte, damit er das Fadenkreuz nicht verdeckt. */
+  #tower-prompt {
+    left: 50%; top: 62%; transform: translate(-50%, -50%);
+    text-align: center; opacity: 0; transition: opacity 0.25s ease;
+  }
+  #tower-prompt.show { opacity: 1; }
+  #tower-prompt .line {
+    font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  #tower-prompt .key {
+    display: inline-block; min-width: 13px; padding: 3px 8px;
+    border: 1px solid var(--accent); border-radius: 4px;
+    background: rgba(0, 0, 0, 0.4); color: #f4f0ea; font-weight: 700;
+    letter-spacing: 0; line-height: 1;
+  }
+  #tower-prompt .sub {
+    margin-top: 8px; font-size: 10px; letter-spacing: 0.26em;
+    text-transform: uppercase; color: var(--hud-dim);
+  }
+
+  /* ---- Episode "The Levy" (R18 Aufgabe A): Talk-Prompt, Dialog-UI, Fade, Nachhall-
+       Karte. Eigener Block statt Umbau des Tower-Prompts — die Episode ist ein
+       Einweg-Beat, keine generische Dialog-Infrastruktur (Auftragsvorgabe). Stil
+       (Panel, Border, Farben) folgt exakt den HUD-Variablen oben. ---- */
+  #episode-prompt {
+    left: 50%; top: 70%; transform: translate(-50%, -50%);
+    text-align: center; opacity: 0; transition: opacity 0.25s ease;
+  }
+  #episode-prompt.show { opacity: 1; }
+  #episode-prompt .line {
+    font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  #episode-prompt .key {
+    display: inline-block; min-width: 13px; padding: 3px 8px;
+    border: 1px solid var(--accent); border-radius: 4px;
+    background: rgba(0, 0, 0, 0.4); color: #f4f0ea; font-weight: 700;
+    letter-spacing: 0; line-height: 1;
+  }
+  /* ---- R23 Aufgabe B.5: Strandgut-Prompt (island/discover.js) — exakt der
+       Stil des Turm-Prompts, nur etwas tiefer, damit beide koexistieren ---- */
+  #discover-prompt {
+    left: 50%; top: 68%; transform: translate(-50%, -50%);
+    text-align: center; opacity: 0; transition: opacity 0.25s ease;
+  }
+  #discover-prompt.show { opacity: 1; }
+  #discover-prompt .line {
+    font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  #discover-prompt .key {
+    display: inline-block; min-width: 13px; padding: 3px 8px;
+    border: 1px solid var(--accent); border-radius: 4px;
+    background: rgba(0, 0, 0, 0.4); color: #f4f0ea; font-weight: 700;
+    letter-spacing: 0; line-height: 1;
+  }
+  /* ---- R25 (Felix' Feedback): Aufsammel-Toast unten rechts, ueber den
+       Ability-Keycaps (#hud-abilities: right 24 / bottom 28). Stil wie der
+       Ruhe-Strip: kleine Uppercase-Zeile auf HUD-Panel, blendet weich ein/aus.
+       Sichtbarkeit steuert island/discover.js (rAF-Timer, kein setTimeout). ---- */
+  #pickup-toast {
+    right: 24px; bottom: 86px; text-align: right;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--hud-text);
+    background: var(--hud-bg); border: 1px solid var(--hud-border);
+    border-radius: 4px; padding: 7px 12px;
+    opacity: 0; transition: opacity 0.4s ease;
+  }
+  #pickup-toast.show { opacity: 1; }
+
+  #episode-fade {
+    position: fixed; inset: 0; z-index: 40; background: #000;
+    opacity: 0; pointer-events: none;
+  }
+  #episode-dialog {
+    position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%);
+    z-index: 41; width: min(640px, 82vw);
+    background: var(--hud-bg); border: 1px solid var(--hud-border); border-radius: 6px;
+    padding: 18px 22px; text-align: left;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+  }
+  #episode-dialog.show { opacity: 1; pointer-events: auto; }
+  #episode-speaker {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--accent-soft); margin-bottom: 8px;
+  }
+  #episode-line { font-size: 16px; line-height: 1.4; margin-bottom: 16px; }
+  #episode-options { display: flex; flex-direction: column; gap: 8px; }
+  .ep-option {
+    pointer-events: auto; cursor: pointer; text-align: left;
+    display: flex; align-items: center; gap: 10px;
+    font-family: inherit; color: var(--hud-text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px;
+    padding: 9px 12px; font-size: 13px; transition: background 0.15s, border-color 0.15s;
+  }
+  .ep-option:hover { background: rgba(255, 90, 60, 0.16); border-color: var(--accent-soft); }
+  /* R21 Aufgabe A: Pad-Auswahl (D-Pad) — gleicher Look wie :hover, damit Maus- und
+     Pad-Markierung identisch lesen; gesetzt von episode.js padDialogInput(). */
+  .ep-option.selected { background: rgba(255, 90, 60, 0.16); border-color: var(--accent-soft); }
+
+  /* R21 Aufgabe A: Pause-Overlay (Start-Knopf am Pad) — HUD-Look wie die Prompts */
+  #pause-overlay {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(8, 6, 10, 0.55); pointer-events: none; text-align: center;
+  }
+  #pause-overlay.show { display: flex; }
+  #pause-overlay .pause-title {
+    font-size: 26px; letter-spacing: 0.35em; text-transform: uppercase;
+    color: var(--hud-text); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
+  }
+  #pause-overlay .pause-sub {
+    margin-top: 10px; font-size: 11px; letter-spacing: 0.3em;
+    text-transform: uppercase; color: var(--hud-dim);
+  }
+  .ep-option .ep-key {
+    flex: none; min-width: 18px; text-align: center;
+    font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+  #episode-card {
+    position: fixed; left: 50%; top: 46%; transform: translate(-50%, -50%);
+    z-index: 42; width: min(560px, 80vw); text-align: center; pointer-events: none;
+    font-size: 18px; font-style: italic; line-height: 1.5;
+    color: #f4f0ea; text-shadow: 0 3px 18px rgba(0, 0, 0, 0.85);
+    opacity: 0; transition: opacity 0.4s ease;
+  }
+  #episode-card.show { opacity: 1; }
+
+  /* ---- R20 Aufgabe A: Untertitel unten Mitte + Sprecher-Label. Das CSS fehlte in
+       R19 komplett (Markup ohne Styles eingecheckt) — hier nachgeruestet: HUD-Look,
+       Ein-/Ausblendung 0,35 s, sitzt knapp UEBER der Letterbox-Leiste (12vh). ---- */
+  #episode-subtitle {
+    position: fixed; left: 50%; bottom: 15vh; transform: translateX(-50%);
+    z-index: 41; width: min(760px, 88vw); text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 0.35s ease;
+  }
+  #episode-subtitle.show { opacity: 1; }
+  #episode-subtitle-speaker {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--accent-soft); margin-bottom: 5px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  }
+  #episode-subtitle-speaker:empty { display: none; } /* Erzaehler-Zeilen: kein Label */
+  #episode-subtitle-text {
+    font-size: 17px; line-height: 1.45; color: #f4f0ea;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.8);
+  }
+  #episode-objective {
+    position: fixed; left: 50%; top: 13%; transform: translateX(-50%);
+    z-index: 41; text-align: center; pointer-events: none;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #f4f0ea; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    opacity: 0; transition: opacity 0.3s ease;
+  }
+  #episode-objective.show { opacity: 1; }
+
+  /* ---- R20 Aufgabe C.1: Orts-Karte beim Spielstart — Look der Nachhall-Karte
+       (Serif, zentriert, weich), aber unteres Bilddrittel und mit Unterzeile;
+       bewusst unter dem Fadenkreuz und ausserhalb des Banner-Platzes (top 34%). ---- */
+  #location-card {
+    position: fixed; left: 50%; top: 64%; transform: translate(-50%, -50%);
+    z-index: 39; text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 0.6s ease;
+  }
+  #location-card.show { opacity: 1; }
+  #location-card .loc-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 26px; letter-spacing: 0.08em; color: #f4f0ea;
+    text-shadow: 0 3px 20px rgba(0, 0, 0, 0.85);
+  }
+  #location-card .loc-sub {
+    margin-top: 6px; font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--hud-dim); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  }
+
+  /* ---- Minimap + Quest-Tracker (R18 Aufgabe C): DOM/Canvas werden von
+       src/minimap.js selbst erzeugt (kein zusaetzliches Markup hier noetig) —
+       diese Regeln geben nur den HUD-konformen Look vor. Ecke per ?map=left|right,
+       Default rechts (minimap.js liest den Parameter). ---- */
+  #minimap-wrap { top: 16px; text-align: center; }
+  #minimap-wrap.corner-right { right: 16px; }
+  #minimap-wrap.corner-left { left: 16px; }
+  #minimap-canvas { display: block; border-radius: 50%; }
+  #quest-tracker { margin-top: 8px; }
+  #quest-tracker.hidden { display: none; }
+  #quest-tracker .qt-title {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--hud-text);
+  }
+  #quest-tracker .qt-step {
+    margin-top: 2px; font-size: 10px; letter-spacing: 0.04em; color: var(--hud-dim);
+  }
+
+  /* ---- crosshair ---- */
+  #crosshair {
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: rgba(255, 255, 255, 0.55);
+  }
+  #crosshair::before { left: 50%; top: -9px; width: 1px; height: 5px; transform: translateX(-50%); }
+  #crosshair::after { left: 50%; bottom: -9px; width: 1px; height: 5px; transform: translateX(-50%); }
+
+  /* ---- screens ---- */
+  .screen {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(8, 10, 16, 0.72); backdrop-filter: blur(8px);
+    text-align: center;
+  }
+  .screen.hidden { display: none; }
+  .screen h1 {
+    font-size: 44px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+    text-shadow: 0 3px 24px rgba(0, 0, 0, 0.8);
+  }
+  .screen h1 .thin { font-weight: 300; color: var(--hud-dim); }
+  .screen .tagline {
+    font-size: 12px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--accent-soft); margin-top: 12px;
+  }
+  .screen .controls {
+    margin-top: 36px; display: grid; grid-template-columns: auto auto;
+    gap: 8px 22px; font-size: 12px; letter-spacing: 0.08em; text-align: left;
+  }
+  .screen .controls .k { color: var(--hud-dim); text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; text-align: right; }
+  .screen button {
+    margin-top: 40px; pointer-events: auto; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--hud-text); background: rgba(255, 90, 60, 0.16);
+    border: 1px solid var(--accent-soft); border-radius: 4px;
+    padding: 14px 46px; transition: background 0.2s;
+  }
+  .screen button:hover { background: rgba(255, 90, 60, 0.38); }
+  .screen .stats { margin-top: 18px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--hud-dim); }
+  .screen button.secondary {
+    background: none; border-color: rgba(255, 255, 255, 0.22); color: var(--hud-dim);
+  }
+  .screen button.secondary:hover { background: rgba(255, 255, 255, 0.08); color: var(--hud-text); }
+  /* .hidden ist in dieser Datei pro Element gescopt (.screen.hidden etc.) — der
+     New-Journey-Knopf braucht deshalb seine eigene Regel. */
+  #btn-new-journey.hidden { display: none; }
+  /* R22 Aufgabe C.1: eine Zeile Kontext fuer Rueckkehrer mit gesetztem Traum —
+     erklaert, warum "New Journey" jetzt oben steht und was "Free Play" bedeutet. */
+  #menu-returning-note { margin-top: 34px; font-size: 12px; letter-spacing: 0.14em; color: var(--hud-dim); }
+  #menu-returning-note.hidden { display: none; }
+  #btn-open-editor, #btn-editor-win, #btn-editor-lose {
+    margin-top: 14px; padding: 11px 34px; font-size: 11px;
+  }
+
+  /* ---- Charakter-Editor v0 (Runde 11) ---- */
+  #screen-editor {
+    justify-content: stretch; align-items: stretch;
+    background: linear-gradient(135deg, rgba(10, 13, 20, 0.96), rgba(16, 12, 22, 0.96));
+  }
+  #editor-layout {
+    flex: 1; display: flex; align-items: stretch; min-height: 0;
+    padding: 34px 44px 0;
+    gap: 34px;
+    text-align: left;
+  }
+  #editor-left {
+    width: 320px; flex: none; overflow-y: auto; padding-right: 6px;
+    scrollbar-width: thin;
+  }
+  .ed-title {
+    font-size: 30px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase;
+    border-bottom: 2px solid var(--accent); padding-bottom: 10px;
+  }
+  .ed-label {
+    display: block;
+    margin: 22px 0 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.3em;
+    text-transform: uppercase; color: var(--hud-dim);
+  }
+  #editor-name {
+    width: 100%; pointer-events: auto;
+    font-family: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--hud-text); background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px;
+    padding: 9px 12px; outline: none;
+  }
+  #editor-name:focus { border-color: var(--accent-soft); }
+  /* Tabs (Runde 12): Frisur / Gesicht / Körperbau / Kleidung */
+  #editor-tabs { display: flex; gap: 6px; margin-top: 22px; }
+  .ed-tab {
+    pointer-events: auto; cursor: pointer; flex: 1;
+    font-family: inherit; font-size: 9px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--hud-dim); background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 4px;
+    padding: 8px 2px; transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .ed-tab:hover { background: rgba(255, 255, 255, 0.09); }
+  .ed-tab.active {
+    color: var(--hud-text); border-color: var(--accent-soft);
+    background: rgba(255, 90, 60, 0.13);
+  }
+  .ed-section { margin-top: 4px; }
+  .ed-section.hidden { display: none; }
+  .ed-note {
+    margin: 10px 0; font-size: 10px; letter-spacing: 0.06em; color: var(--hud-dim);
+  }
+  #editor-presets, #editor-faces, #editor-bodies, #editor-outfits {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 9px;
+  }
+  /* Stat-Anzeige auf Körperbau-Karten: WUCHT/TEMPO — Design = Fähigkeit */
+  .ed-stats {
+    width: 100%; display: flex; flex-direction: column; gap: 3px;
+    margin-top: 3px; padding: 0 4px 2px;
+  }
+  .ed-stat { display: flex; align-items: center; gap: 6px; }
+  .ed-stat-name {
+    font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--hud-dim); width: 36px; text-align: left;
+  }
+  .ed-stat-bar {
+    flex: 1; height: 3px; border-radius: 2px; position: relative;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .ed-stat-bar > span { display: block; height: 100%; background: var(--accent-soft); }
+  /* Mittelmarke: 1.00x liegt bei 50% — Balken links davon = Malus, rechts = Bonus */
+  .ed-stat-bar::after {
+    content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px;
+    width: 1px; background: rgba(255, 255, 255, 0.45);
+  }
+  /* Namensschild an der Bühne, unterm Podest (Runde-11-Restpunkt) */
+  #stage-nameplate {
+    position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%);
+    font-size: 13px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--hud-text); text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+    padding: 6px 18px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px;
+    background: rgba(10, 14, 22, 0.55); pointer-events: none; white-space: nowrap;
+  }
+  .ed-card {
+    pointer-events: auto; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-family: inherit; color: var(--hud-text);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 6px;
+    padding: 10px 6px 8px;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .ed-card:hover { background: rgba(255, 255, 255, 0.09); transform: translateY(-1px); }
+  .ed-card.active {
+    border-color: var(--accent-soft);
+    background: rgba(255, 90, 60, 0.13);
+    box-shadow: 0 0 14px rgba(255, 90, 60, 0.25);
+  }
+  .ed-thumb {
+    width: 76px; height: 76px; border-radius: 5px;
+    background: rgba(10, 14, 22, 0.7) center / cover no-repeat;
+  }
+  .ed-card-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  #editor-colors, #editor-outfit-colors {
+    display: flex; gap: 9px; padding-bottom: 26px; flex-wrap: wrap;
+  }
+  #editor-colors.disabled { opacity: 0.3; pointer-events: none; }
+  .ed-swatch {
+    pointer-events: auto; cursor: pointer;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .ed-swatch:hover { transform: scale(1.12); }
+  .ed-swatch.active { border-color: #fff; box-shadow: 0 0 10px rgba(255, 255, 255, 0.4); }
+  #editor-stage {
+    flex: 1; position: relative; min-width: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;
+    background:
+      radial-gradient(ellipse at 50% 38%, rgba(64, 78, 110, 0.5), transparent 62%),
+      linear-gradient(180deg, #182030, #0b0e15 78%);
+    overflow: hidden;
+  }
+  #editor-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  #editor-hint {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--hud-dim); pointer-events: none;
+  }
+  #editor-actions {
+    display: flex; justify-content: flex-end; gap: 14px;
+    padding: 20px 44px 30px;
+  }
+  #editor-actions button { margin-top: 0; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="color-grade"></div>
+  <div id="vignette"></div>
+  <div id="lowhp-vignette"></div>
+  <div id="danger-vignette"></div>
+  <div id="overdrive-vignette"></div>
+  <div id="damage-flash"></div>
+
+  <!-- HUD -->
+  <div id="hud-player" class="hud">
+    <span id="hp-num">100 / 100</span>
+    <span class="label">Rook</span>
+    <div class="bar"><div id="hp-fill" class="fill"></div></div>
+    <div id="companion-tag">
+      <span id="companion-dot"></span>
+      <span class="companion-name">Kai</span>
+    </div>
+    <div id="companion-banter"></div>
+    <div id="hud-overdrive">
+      <div class="label">Overdrive <span class="key">F</span></div>
+      <div class="od-bar"><div id="od-fill" class="od-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="hud-objective" class="hud">
+    <!-- src/ui.js writes into these two; the visible columns mirror them -->
+    <div id="obj-src">
+      <div id="wave-title">Wave 1</div>
+      <div id="wave-sub">Marines remaining — 0</div>
+    </div>
+    <div class="col"><span class="val" id="obj-wave">1</span><span class="tag">Wave</span></div>
+    <div class="col"><span class="val" id="obj-marines">0</span><span class="tag">Marines</span></div>
+    <div class="col"><span class="val" id="obj-elims">0</span><span class="tag">K.O.</span></div>
+    <!-- Friedensphase: ersetzt die drei Zahlen-Spalten, solange keine Welle laeuft.
+         src/ui.js schreibt hier direkt hinein (nicht ueber #obj-src). -->
+    <div class="col calm-only"><span class="val" id="obj-calm-val">Harbour Village</span><span class="tag" id="obj-calm-tag">Take a look around</span></div>
+  </div>
+
+  <div id="compass" class="hud"></div>
+
+  <div id="hud-abilities" class="hud">
+    <div class="ability" id="ab-pistol"><div class="cd"></div><div class="key">LMB</div><div class="name">Pistol</div></div>
+    <div class="ability" id="ab-bazooka"><div class="cd"></div><div class="key">RMB</div><div class="name">Bazooka</div></div>
+    <div class="ability" id="ab-gatling"><div class="cd"></div><div class="key">Q</div><div class="name">Gatling</div></div>
+  </div>
+
+  <div id="hud-boss" class="hud">
+    <div id="boss-name">Axthand Vargo</div>
+    <div class="bar"><div id="boss-fill" class="fill"></div></div>
+  </div>
+
+  <div id="wave-banner" class="hud"><span id="banner-text">Wave 1</span><div class="sub" id="banner-sub"></div></div>
+
+  <div id="victory-banner"></div>
+
+  <div id="crosshair" class="hud" style="display:none"></div>
+
+  <!-- Friedensphase: Angebot am Wachturm. src/ui.js schaltet nur die Klasse .show.
+       Die Kopfzeile nennt die FOLGE, nicht die Geste: E steigt auf keinen Turm, E holt
+       die Marine. Vorher stand "Auf den Wachturm steigen" gross und die Folge klein
+       darunter — das Gegenteil dessen, was der Spieler wissen muss, bevor er drueckt. -->
+  <div id="tower-prompt" class="hud">
+    <div class="line"><span class="key">E</span><span>Die Marine rufen — der Kampf beginnt</span></div>
+    <div class="sub">Bis dahin bleibt das Dorf in Ruhe</div>
+  </div>
+
+  <!-- Episode "The Arrest" (R18 Umbau v4): Talk-Prompt, Dialog-UI, Fade, Nachhall-Karte.
+       Inhalt/Sichtbarkeit steuert ausschliesslich src/episode.js. Der Prompt gilt jetzt
+       dem Fremden am Brunnen (Akt 3), nicht mehr Kai — Text ist deshalb statt fest im
+       Markup ueber #episode-prompt-text gesetzt, falls episode.js ihn je anpassen will. -->
+  <div id="episode-prompt" class="hud">
+    <div class="line"><span class="key">E</span><span id="episode-prompt-text">Talk to the stranger</span></div>
+  </div>
+  <!-- R23 Aufgabe B.5: Strandgut-Interakt (island/discover.js schaltet Sichtbarkeit
+       + Text; main.js haelt die Tasten-Beschriftung E<->Y synchron wie beim Turm) -->
+  <!-- R25: Aufsammel-Toast (island/discover.js) — kleine Nachricht unten rechts
+       statt Hebe-Animation am Fundstueck (Felix' Feedback) -->
+  <div id="pickup-toast" class="hud"></div>
+  <div id="discover-prompt" class="hud">
+    <div class="line"><span class="key">E</span><span id="discover-prompt-text">Strandgut aufsammeln</span></div>
+  </div>
+  <div id="episode-fade"></div>
+  <div id="episode-dialog">
+    <div id="episode-speaker">Kai</div>
+    <div id="episode-line"></div>
+    <div id="episode-options"></div>
+  </div>
+  <div id="episode-card"><span id="episode-card-text"></span></div>
+  <!-- R19: Untertitel-Zeile (Story-Text) + Kampfziel-Zeile des Handgemenges.
+       R20 Aufgabe A: Sprecher-Label als eigene Zeile UEBER dem Text (Stil von
+       #episode-speaker; Felix' offener Punkt 3 — Alternative waere "Name: Text");
+       das doppelte R19-Markup ist raus (getElementById traf ohnehin nur das erste). -->
+  <div id="episode-subtitle">
+    <div id="episode-subtitle-speaker"></div>
+    <div id="episode-subtitle-text"></div>
+  </div>
+  <div id="episode-objective"></div>
+  <!-- R20 Aufgabe C.1: Orts-/Zeit-Karte beim Spielstart (AC-Stil, dezent) —
+       main.js blendet sie nach dem Start-Banner ein und wieder aus. -->
+  <div id="location-card">
+    <div class="loc-title"></div>
+    <div class="loc-sub"></div>
+  </div>
+
+  <!-- R21 Aufgabe A: Pause-Overlay (Start-Knopf am Pad). Reines DOM — main.js
+       friert waehrenddessen den Tick ein (nur renderFrame laeuft weiter). -->
+  <div id="pause-overlay">
+    <div class="pause-title">Paused</div>
+    <div class="pause-sub">Start to resume</div>
+  </div>
+
+  <!-- boss-intro presentation (Runde 9): letterbox bars + anime-style name card -->
+  <div id="letterbox-top" class="letterbox"></div>
+  <div id="letterbox-bottom" class="letterbox"></div>
+  <div id="boss-intro-card">
+    <div class="bic-title" id="bic-title">Marine-Kapitän</div>
+    <div class="bic-name" id="bic-name">Axthand Vargo</div>
+  </div>
+
+  <!-- Screens -->
+  <div id="screen-start" class="screen">
+    <h1></h1>
+    <div class="tagline"></div>
+    <div class="controls">
+      <span class="k">Move</span><span>W A S D</span>
+      <!-- Renn-Umschalter: R, kein Strg. Strg+W schliesst den Tab (unabfangbar),
+           Strg+S/D/A oeffnen Browser-Dialoge, die den Fokus klauen. Details in main.js. -->
+      <span class="k">Run</span><span>R — toggle (village)</span>
+      <span class="k">Jump</span><span>Space</span>
+      <span class="k">Pistol</span><span>Left Click</span>
+      <span class="k">Bazooka</span><span>Right Click</span>
+      <span class="k">Gatling</span><span>Q</span>
+      <span class="k">Overdrive</span><span>F (meter full)</span>
+      <!-- R21 Aufgabe A: Controller-Zeile — Standard-Mapping, Details in main.js
+           (RT Bazooka, LT Gatling, RB Overdrive, L3 Run sind Builder-Zugabe). -->
+      <span class="k">Gamepad</span><span>Sticks · A Jump · X Attack · B Dodge · Y Talk · Start Pause</span>
+    </div>
+    <!-- R22 Aufgabe C.1: fuer Rueckkehrer mit gesetztem Traum ordnet main.js
+         (applyMenuMode) das Menue um — New Journey wird der primaere Knopf und
+         rueckt VOR den Start-Knopf, der dann ehrlich "Free Play" heisst; diese
+         Zeile erklaert den Unterschied. Ohne Traum bleibt alles wie bisher. -->
+    <div id="menu-returning-note" class="hidden">Your story is told — begin a new one, or roam the island in Free Play.</div>
+    <button id="btn-start">Enter the Arena</button>
+    <!-- R18-Reparatur: sichtbarer Neustart-Weg fuer Rueckkehrer mit gespeichertem
+         Traum (aod_dream) — main.js blendet ihn nur dann ein und ruft resetDream()
+         + startGame(). ?resetdream=1 bleibt als Test-Werkzeug, ist aber kein
+         Onboarding (Felix' Spaettest 14.08.: Episode fuer Rueckkehrer unsichtbar). -->
+    <button id="btn-new-journey" class="secondary hidden">New Journey — restart the story</button>
+    <button id="btn-open-editor" class="secondary">Charakter</button>
+  </div>
+
+  <!-- Charakter-Editor (Runde 11 + 12): Tabs links, Turntable-Vorschau rechts -->
+  <div id="screen-editor" class="screen hidden">
+    <div id="editor-layout">
+      <div id="editor-left">
+        <div class="ed-title">Charakter</div>
+        <label class="ed-label" for="editor-name">Name</label>
+        <input id="editor-name" maxlength="24" spellcheck="false" autocomplete="off">
+        <div id="editor-tabs">
+          <button class="ed-tab active" data-tab="frisur">Frisur</button>
+          <button class="ed-tab" data-tab="gesicht">Gesicht</button>
+          <button class="ed-tab" data-tab="koerper">Körperbau</button>
+          <button class="ed-tab" data-tab="kleidung">Kleidung</button>
+        </div>
+        <div class="ed-section" data-tab="frisur">
+          <div class="ed-label">Frisur</div>
+          <div id="editor-presets"></div>
+          <div class="ed-label">Haarfarbe</div>
+          <div id="editor-colors"></div>
+        </div>
+        <div class="ed-section hidden" data-tab="gesicht">
+          <div class="ed-label">Gesicht</div>
+          <div id="editor-faces"></div>
+        </div>
+        <div class="ed-section hidden" data-tab="koerper">
+          <div class="ed-label">Körperbau — Design = Fähigkeit</div>
+          <div id="editor-bodies"></div>
+        </div>
+        <div class="ed-section hidden" data-tab="kleidung">
+          <div class="ed-label">Outfit</div>
+          <div id="editor-outfits"></div>
+          <div class="ed-label">Kleidungsfarbe</div>
+          <div id="editor-outfit-colors"></div>
+        </div>
+      </div>
+      <div id="editor-stage">
+        <canvas id="editor-canvas"></canvas>
+        <div id="stage-nameplate"></div>
+        <div id="editor-hint">Ziehen zum Drehen</div>
+      </div>
+    </div>
+    <div id="editor-actions">
+      <button id="btn-editor-back" class="secondary">Zurück</button>
+      <button id="btn-editor-apply">Übernehmen</button>
+    </div>
+  </div>
+
+  <div id="screen-win" class="screen hidden">
+    <h1>Victory</h1>
+    <div class="tagline">Vargo has fallen — the island is free</div>
+    <div class="stats" id="win-stats"></div>
+    <button id="btn-restart-win">Fight Again</button>
+    <button id="btn-editor-win" class="secondary">Charakter ändern</button>
+  </div>
+
+  <div id="screen-lose" class="screen hidden">
+    <h1>Defeated</h1>
+    <div class="tagline">The Marines have taken the square</div>
+    <div class="stats" id="lose-stats"></div>
+    <button id="btn-restart-lose">Try Again</button>
+    <button id="btn-editor-lose" class="secondary">Charakter ändern</button>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+
+  <!-- HUD presentation layer: compass, objective mirror, low-hp vignette, cd sweep.
+       Reads only DOM state that src/ui.js writes — no game-code coupling. -->
+  <script type="module">
+    const canvas = document.getElementById('game-canvas');
+
+    // ---- compass strip: procedural 1024x20 tape ----
+    const tape = document.createElement('canvas');
+    tape.width = 1024; tape.height = 20;
+    const tc = tape.getContext('2d');
+    const DIRS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    tc.font = '10px "Segoe UI", Arial, sans-serif';
+    tc.textAlign = 'center';
+    for (let deg = 0; deg < 360; deg += 5) {
+      const x = (deg / 360) * 1024;
+      if (deg % 45 === 0) {
+        tc.fillStyle = 'rgba(240,244,248,0.75)';
+        tc.fillText(DIRS[deg], x, 10);
+        tc.fillStyle = 'rgba(240,244,248,0.55)';
+        tc.fillRect(x, 14, 1, 6);
+      } else {
+        const tall = deg % 15 === 0;
+        tc.fillStyle = tall ? 'rgba(240,244,248,0.45)' : 'rgba(240,244,248,0.25)';
+        tc.fillRect(x, tall ? 12 : 15, 1, tall ? 8 : 5);
+      }
+    }
+    const compass = document.getElementById('compass');
+    compass.style.backgroundImage = `url(${tape.toDataURL()})`;
+
+    // mirror main.js's yaw (module-local there): same events, same sensitivity, same reset
+    let yaw = 0;
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === canvas) yaw -= e.movementX * 0.0024;
+    });
+
+    // ---- objective strip: mirror #wave-title / #wave-sub into the 3 columns ----
+    const waveTitle = document.getElementById('wave-title');
+    const waveSub = document.getElementById('wave-sub');
+    const objWave = document.getElementById('obj-wave');
+    const objMarines = document.getElementById('obj-marines');
+    const objElims = document.getElementById('obj-elims');
+    let elims = 0, prevRemaining = null, prevTitle = '';
+    function syncObjective() {
+      const title = waveTitle.textContent;
+      const m = title.match(/\d+/);
+      objWave.textContent = m ? m[0] : 'BOSS';
+      const r = waveSub.textContent.match(/\d+/);
+      const remaining = r ? parseInt(r[0], 10) : 0;
+      if (title !== prevTitle) { prevTitle = title; prevRemaining = null; }
+      if (prevRemaining !== null && remaining < prevRemaining) elims += prevRemaining - remaining;
+      prevRemaining = remaining;
+      objMarines.textContent = remaining;
+      objElims.textContent = elims;
+    }
+    new MutationObserver(syncObjective)
+      .observe(document.getElementById('obj-src'), { childList: true, characterData: true, subtree: true });
+
+    for (const id of ['btn-start', 'btn-new-journey', 'btn-restart-win', 'btn-restart-lose']) {
+      document.getElementById(id).addEventListener('click', () => {
+        yaw = 0; elims = 0; prevRemaining = null; prevTitle = '';
+        objElims.textContent = '0';
+      });
+    }
+
+    // ---- ability names: visible for 2s after use ----
+    const abilities = document.getElementById('hud-abilities');
+    let nameTimer = null;
+    function flashNames() {
+      abilities.classList.add('show-names');
+      clearTimeout(nameTimer);
+      nameTimer = setTimeout(() => abilities.classList.remove('show-names'), 2000);
+    }
+    document.addEventListener('keydown', (e) => { if (e.code === 'KeyQ') flashNames(); });
+    document.addEventListener('mousedown', () => {
+      if (document.pointerLockElement === canvas) flashNames();
+    });
+
+    // ---- per-frame: compass scroll, cooldown sweeps, hp tint + low-hp vignette ----
+    const hpNum = document.getElementById('hp-num');
+    const hpFill = document.getElementById('hp-fill');
+    const lowhp = document.getElementById('lowhp-vignette');
+    const cds = [...document.querySelectorAll('.ability .cd')];
+    function tick() {
+      // compass: heading in degrees, N = yaw 0 (facing -Z)
+      const heading = ((-yaw * 180 / Math.PI) % 360 + 360) % 360;
+      compass.style.backgroundPositionX = `${-(heading / 360) * 1024 + 120}px`;
+
+      // cooldowns: ui.js writes scaleY(f) inline; convert to conic sweep percentage
+      for (const cd of cds) {
+        const m = cd.style.transform && cd.style.transform.match(/scaleY\(([\d.]+)\)/);
+        cd.style.setProperty('--cd', `${m ? Math.min(1, parseFloat(m[1])) * 100 : 0}%`);
+      }
+
+      // hp: parse the number ui.js writes, tint numeral/fill, drive low-hp vignette
+      const hm = hpNum.textContent.match(/\d+/);
+      if (hm) {
+        const hp = parseInt(hm[0], 10);
+        const low = hp < 30;
+        document.documentElement.style.setProperty('--hp-color', low ? '#ff5a3c' : '#ffffff');
+        hpFill.style.background = low ? '#ff5a3c' : '#ffffff';
+        lowhp.style.opacity = Math.max(0, Math.min(1, (40 - hp) / 40 * 0.8)).toFixed(3);
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

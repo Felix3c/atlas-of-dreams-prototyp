@@ -1,0 +1,27 @@
+{
+  "_hinweis": "Trage hier ein, WANN in deinem Stueck welcher Bildmoment sitzen soll. Alle Zahlen sind Sekunden ab Beginn der Musik. Die Werte unten sind Platzhalter - ueberschreib sie einfach. Kein Code-Eingriff noetig, das Spiel richtet sich danach.",
+
+  "file": "music/hanami-intro.wav",
+
+  "cues": {
+    "stille": 0.0,
+    "arme_hoch": 3.5,
+    "tuerme_start": 4.2,
+    "tuerme_peak": 6.0,
+    "blueten": 7.8,
+    "pollen": 9.0,
+    "schwerter": 12.5,
+    "kampf_start": 14.0
+  },
+
+  "_was_die_marken_bedeuten": {
+    "stille": "Musik setzt ein / Hanami steht mit dem Ruecken zum Spieler und lacht leise",
+    "arme_hoch": "Er reisst beide Arme in den Himmel - eine einzige Bewegung",
+    "tuerme_start": "Der Boden geht auf, Graeser schiessen als Welle nach aussen",
+    "tuerme_peak": "Die Tuerme sind auf voller Hoehe, ragen ueber die Kamera hinaus",
+    "blueten": "Die Tuerme brechen in Blueten auf",
+    "pollen": "Pollen stehen in der Luft und fangen das Licht, die Voegel drehen durch",
+    "schwerter": "Er greift in zwei Tuerme und zieht die Schwerter heraus",
+    "kampf_start": "Er dreht sich zum ersten Mal um - Kampf beginnt"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "category": "hair",
+  "presets": [
+    {
+      "id": "spiky",
+      "label": "Sturmspitzen",
+      "file": "spiky.glb"
+    },
+    {
+      "id": "ponytail",
+      "label": "Zopf",
+      "file": "ponytail.glb"
+    },
+    {
+      "id": "buzz",
+      "label": "Rasiert",
+      "file": "buzz.glb"
+    },
+    {
+      "id": "wild",
+      "label": "Maehne",
+      "file": "wild.glb"
+    },
+    {
+      "id": "mohawk",
+      "label": "Kamm",
+      "file": "mohawk.glb"
+    },
+    {
+      "id": "bob",
+      "label": "Helmschnitt",
+      "file": "bob.glb"
+    }
+  ]
+}
