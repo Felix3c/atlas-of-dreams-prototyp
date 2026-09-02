@@ -5,7 +5,7 @@
 // hit-stop/slow-mo. Deliberately independent of ui.js so both main.js and crew.js
 // can call trigger() directly without passing the UI instance around.
 //
-// Ton: knapp, trocken-loyal — der stille Schwertkämpfer, kein One-Piece-Vokabular.
+// Ton: knapp, trocken-loyal — der stille Schwertkämpfer, kein Genre-Jargon.
 
 const LINES = {
   // Kampfstart / Wellenstart
