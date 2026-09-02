@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Atlas of Dreams — Design-Prototyp</title>
 <script>
-  // Entbrandung (R16): Titel/Tagline leben in EINER Konstante — Felix' finale
-  // Titel-Entscheidung steht aus (RUNDE16-AUFTRAG, Aufgabe A1); der Tausch ist
-  // dann genau diese eine Zeile. Der Held-Standardname steht daneben, damit
-  // editor.js (DEFAULT_NAME) und HUD dieselbe Quelle lesen.
+  // Titel/Tagline leben in EINER Konstante; der Held-Standardname steht daneben,
+  // damit editor.js (DEFAULT_NAME) und HUD dieselbe Quelle lesen.
   // Titel von Felix entschieden (13.08.2026): „Atlas of Dreams" — der Atlas aus
   // dem Kindheitsspiel der Brüder + der Traum als Kernmechanik (WELT.md).
   window.GAME_META = { title: 'Atlas of Dreams', tagline: 'Design Prototype · Malis, The Still Sea', hero: 'Rook' };
@@ -791,9 +789,9 @@
   <div id="compass" class="hud"></div>
 
   <div id="hud-abilities" class="hud">
-    <div class="ability" id="ab-pistol"><div class="cd"></div><div class="key">LMB</div><div class="name">Strike</div></div>
-    <div class="ability" id="ab-bazooka"><div class="cd"></div><div class="key">RMB</div><div class="name">Heavy Blow</div></div>
-    <div class="ability" id="ab-gatling"><div class="cd"></div><div class="key">Q</div><div class="name">Flurry</div></div>
+    <div class="ability" id="ab-strike"><div class="cd"></div><div class="key">LMB</div><div class="name">Strike</div></div>
+    <div class="ability" id="ab-heavyBlow"><div class="cd"></div><div class="key">RMB</div><div class="name">Heavy Blow</div></div>
+    <div class="ability" id="ab-flurry"><div class="cd"></div><div class="key">Q</div><div class="name">Flurry</div></div>
   </div>
 
   <div id="hud-boss" class="hud">
@@ -884,7 +882,7 @@
       <span class="k">Flurry</span><span>Q</span>
       <span class="k">Overdrive</span><span>F (meter full)</span>
       <!-- R21 Aufgabe A: Controller-Zeile — Standard-Mapping, Details in main.js
-           (RT Bazooka, LT Gatling, RB Overdrive, L3 Run sind Builder-Zugabe). -->
+           (RT HeavyBlow, LT Flurry, RB Overdrive, L3 Run sind Builder-Zugabe). -->
       <span class="k">Gamepad</span><span>Sticks · A Jump · X Attack · B Dodge · Y Talk · Start Pause</span>
     </div>
     <!-- R22 Aufgabe C.1: fuer Rueckkehrer mit gesetztem Traum ordnet main.js

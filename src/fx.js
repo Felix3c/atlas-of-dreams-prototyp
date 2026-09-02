@@ -183,7 +183,7 @@ export class FX {
     p.sprite.visible = true;
   }
 
-  // brief ring of thin triangles bursting outward (bazooka / gatling)
+  // brief ring of thin triangles bursting outward (heavyBlow / flurry)
   speedLines(pos) {
     const p = this._next(this.lines);
     p.life = SPEEDLINE_LIFE;

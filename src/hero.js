@@ -2,12 +2,9 @@
 import * as THREE from 'three';
 
 const SKIN = 0xf0b98c;
-const VEST = 0xe0301e;
 const SHORTS = 0x2a5db0;
 const CUFF = 0x1e4586;
 const HAIR = 0x1a1410;
-const HAT = 0xe8c86a;
-const HATBAND = 0xb02020;
 const SANDAL = 0x7a5a34;
 const SCAR = 0x8a2c1e;
 const MOUTH = 0x4a2018;
@@ -45,7 +42,7 @@ export const FACE_PRESETS = {
 // 'offen' = Weste mit Front-V, 'geschlossen' = Hemd/Jacke mit Knopfleiste,
 // 'mantel' = geschlossen + faellt ueber die Huefte, 'frei' = nur Schaerpe.
 export const OUTFIT_PRESETS = {
-  weste:     { label: 'Weste',    style: 'offen',       sleeves: false, defaultColor: 0xe0301e },
+  weste:     { label: 'Weste',    style: 'offen',       sleeves: false, defaultColor: 0x2e6b8f },
   hemd:      { label: 'Hemd',     style: 'geschlossen', sleeves: false, defaultColor: 0xd8d8d0 },
   jacke:     { label: 'Jacke',    style: 'geschlossen', sleeves: true,  defaultColor: 0x24406e },
   aermellos: { label: 'Ärmellos', style: 'frei',        sleeves: false, defaultColor: 0x2e6b3a },
@@ -79,27 +76,6 @@ function makeNoiseTexture() {
   return tex;
 }
 
-// concentric-ring straw weave for the hat
-function makeWeaveTexture() {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#e8c86a';
-  ctx.fillRect(0, 0, size, size);
-  ctx.strokeStyle = '#d9b95c';
-  ctx.lineWidth = 2;
-  const cx = size / 2;
-  for (let r = 3; r < size; r += 6) {
-    ctx.beginPath();
-    ctx.arc(cx, cx, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
-}
-
 function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.0, ...opts });
 }
@@ -111,7 +87,7 @@ function shadow(m) {
 
 // config (Runde 11 + 12, Charakter-Editor):
 //   hair:        THREE.Object3D | null — Frisur-Preset aus assets/presets/hair/*.glb,
-//                Ursprung = Kopfzentrum; ersetzt Standard-Haar + Strohhut + Kinnband
+//                Ursprung = Kopfzentrum; ersetzt das Standard-Haar
 //   hairColor:   hex — Tint fuer das Preset-Material (GLB-Material wird ersetzt)
 //   bodyId:      Key aus BODY_PRESETS  (Koerperbau + Stat-Multiplikatoren)
 //   faceId:      Key aus FACE_PRESETS  (Augen/Brauen/Narbe/Bart/Mund)
@@ -131,7 +107,6 @@ export function createHero(config = {}) {
   group.scale.setScalar(body.scale);
 
   const noiseTex = makeNoiseTexture();
-  const weaveTex = makeWeaveTexture();
 
   const skinMat = mat(SKIN, { map: noiseTex });
   const vestMat = mat(outfitColor, { map: noiseTex, roughness: 0.65 });
@@ -141,8 +116,6 @@ export function createHero(config = {}) {
   const shortsMat = mat(SHORTS, { map: noiseTex });
   const cuffMat = mat(CUFF);
   const hairMat = mat(HAIR, { roughness: 0.7 });
-  const hatMat = mat(HAT, { roughness: 0.95, map: weaveTex });
-  const bandMat = mat(HATBAND);
   const sandalMat = mat(SANDAL, { roughness: 0.95 });
 
   // ---- torso: solid shaped body — top garment wraps the chest per outfit style ----
@@ -237,7 +210,7 @@ export function createHero(config = {}) {
   hair.position.set(0, 0.1, -0.03);
   headPivot.add(hair);
 
-  // fringe — 7 spikes fanned across the forehead, peeking out under the brim
+  // fringe — 7 spikes fanned across the forehead
   const defaultHairParts = [hair]; // alles, was ein Editor-Preset ersetzt
   const fringeGeo = new THREE.BoxGeometry(0.07, 0.1, 0.04);
   for (let i = 0; i < 7; i++) {
@@ -329,36 +302,7 @@ export function createHero(config = {}) {
     headPivot.add(beard);
   }
 
-  // ---- straw hat ----
-  const hat = new THREE.Group();
-  hat.position.set(0, 0.36, -0.02);
-  hat.rotation.x = -0.12;
-  const crown = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.17, 14), hatMat));
-  crown.position.y = 0.06;
-  hat.add(crown);
-  const brim = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.5, 0.025, 18), hatMat));
-  hat.add(brim);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.26, 0.07, 14), bandMat);
-  band.position.y = 0.03;
-  hat.add(band);
-  headPivot.add(hat);
-
-  // chin cord hung at the jawline
-  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.008, 5, 16), mat(0x6b4a2a));
-  cord.position.set(0, -0.05, 0.02);
-  cord.rotation.x = Math.PI / 2 + 0.18;
-  headPivot.add(cord);
-  defaultHairParts.push(hat, cord);
-  // Entbrandung (R16), Hut-Inversion: Der Strohhut wird weiter gebaut (alle
-  // Editor-/Config-Pfade bleiben strukturell stabil), ist aber nur sichtbar,
-  // wenn eine Config ihn AUSDRÜCKLICH bestellt (hat: true) — das tut derzeit
-  // niemand. Damit sind Boot-Standard, Editor-Standard und ALTE Speicherstände
-  // (hairId null) automatisch hutlos, ohne Migrationspfad. config.hair blendet
-  // ohnehin alle defaultHairParts aus (unten).
-  hat.visible = config.hat === true;
-  cord.visible = config.hat === true;
-
-  // ---- Editor-Frisur (Runde 11): GLB-Preset ersetzt Standard-Haar + Hut ----
+  // ---- Editor-Frisur (Runde 11): GLB-Preset ersetzt das Standard-Haar ----
   // Konvention aus tools/blender/hair_presets.py: Ursprung = Kopfzentrum,
   // +Y oben, +Z Blickrichtung — passt damit direkt in den headPivot-Raum.
   if (config.hair) {
@@ -680,7 +624,6 @@ export function createHero(config = {}) {
   // ---- animation ----
   // state: {speed: 0..1, grounded: bool, dashing: bool}
   let phase = 0;
-  let lastBob = 0;
 
   // rubber landing squash: body squashes (1.12, 0.86) then rebounds through
   // 2 diminishing bounces over ~0.35s
@@ -843,11 +786,6 @@ export function createHero(config = {}) {
       torso.rotation.z = 0;
       headPivot.rotation.z = 0;
     }
-
-    // hat lag — reacts to vertical motion so it feels loosely worn
-    const bobVelocity = dt > 0 ? (bob - lastBob) / dt : 0;
-    lastBob = bob;
-    hat.rotation.x = -0.12 - Math.max(-0.5, Math.min(0.5, bobVelocity)) * 0.3;
 
     // airborne pose
     if (!state.grounded) {

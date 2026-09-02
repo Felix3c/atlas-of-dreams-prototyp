@@ -15,14 +15,10 @@ import { sfx } from './audio.js';
 
 const STORAGE_KEY = 'gla_character';
 const HAIR_DIR = './assets/presets/hair/';
-// Entbrandung (R16): Standardname kommt aus window.GAME_META (index.html) —
-// dieselbe Quelle wie Titel/Tagline, damit eine Namensentscheidung von Felix
-// genau eine Stelle ändert. Fallback für Kontexte ohne DOM (Prüfstand).
+// Standardname kommt aus window.GAME_META (index.html) — dieselbe Quelle wie
+// Titel/Tagline, damit eine Namensentscheidung von Felix genau eine Stelle
+// ändert. Fallback für Kontexte ohne DOM (Prüfstand).
 const DEFAULT_NAME = (typeof window !== 'undefined' && window.GAME_META?.hero) || 'Rook';
-// Der alte Standardname aus der Fanspiel-Zeit, nur für die Migration alter
-// Speicherstände. Base64 statt Klartext, damit der Entbrandungs-Grep
-// (RUNDE16-AUFTRAG A4: 0 Treffer) sauber bleibt.
-const LEGACY_DEFAULT_NAME = atob('TW9ua2V5IEQuIEx1ZmZ5');
 
 export const HAIR_COLORS = [
   { id: 'schwarz', hex: 0x1a1410 },
@@ -44,10 +40,9 @@ export const OUTFIT_COLORS = [
 
 // Config-Schema v2 (Runde 12). Alte Runde-11-Saves haben nur
 // hairId/hairColor/name — sanitizeConfig fuellt den Rest mit diesen Defaults.
-// Entbrandung (R16): Der Standard-Held trägt nicht mehr das Fanspiel-Paket.
-// faceId 'froehlich' statt 'standard' (keine Narbe unterm Auge), Oberteil in
-// Blau statt Signalrot. VORLÄUFIG — Felix' Held-Design ist eine offene
-// Entscheidung (Namens-/Design-Session, siehe WELT.md „Namen, alle").
+// Standard-Held: faceId 'froehlich' (keine Narbe unterm Auge), Oberteil in Blau —
+// derselbe Wert wie OUTFIT_PRESETS.weste.defaultColor in hero.js. VORLÄUFIG —
+// Felix' Held-Design ist eine offene Entscheidung (siehe WELT.md „Namen, alle").
 const DEFAULT_CONFIG = Object.freeze({
   hairId: null,
   hairColor: 0x1a1410,
@@ -99,11 +94,7 @@ function sanitizeConfig(raw) {
     bodyId: BODY_PRESETS[raw.bodyId] ? raw.bodyId : DEFAULT_CONFIG.bodyId,
     outfitId: OUTFIT_PRESETS[raw.outfitId] ? raw.outfitId : DEFAULT_CONFIG.outfitId,
     outfitColor: typeof raw.outfitColor === 'number' ? raw.outfitColor : DEFAULT_CONFIG.outfitColor,
-    // Migration (R16): Speicherstände, die noch den unveränderten Fanspiel-
-    // Standardnamen tragen, bekommen den neuen Standard — selbst gewählte
-    // Namen bleiben unangetastet.
-    name: typeof raw.name === 'string' && raw.name.trim() && raw.name.trim() !== LEGACY_DEFAULT_NAME
-      ? raw.name.trim() : DEFAULT_NAME,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : DEFAULT_NAME,
   };
 }
 
@@ -579,8 +570,7 @@ export function initEditor({ onApply }) {
 
   async function buildPanel() {
     // ---- Frisur (GLB-Presets; Manifest kann fehlen -> nur diese Sektion degradiert)
-    // R16: id null = Standard-Haar OHNE Hut (Hut-Inversion in hero.js) — das
-    // Strohhut-Paket ist kein Standard und keine Editor-Option mehr.
+    // id null = Standard-Haar aus hero.js.
     let hairEntries = [{ id: null, label: 'Standard' }];
     try {
       const manifest = await loadManifest();

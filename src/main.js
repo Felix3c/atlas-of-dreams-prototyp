@@ -308,10 +308,10 @@ async function applyCharacter(cfg) {
 }
 initEditor({ onApply: (cfg) => applyCharacter(cfg) }); // editor.js awaited das Promise
 const savedCharacter = loadSavedConfig();
-// R16 (Entbrandung): auch OHNE Speicherstand einmal durch applyCharacter —
-// buildCharacter(null) füllt mit editor.js DEFAULT_CONFIG auf (froehlich,
-// blaues Oberteil), damit der Fresh-Start denselben Standard trägt wie der
-// Editor statt der nackten createHero()-Defaults (rote Weste, Narbe).
+// R16: auch OHNE Speicherstand einmal durch applyCharacter — buildCharacter(null)
+// füllt mit editor.js DEFAULT_CONFIG auf (froehlich, blaues Oberteil), damit der
+// Fresh-Start denselben Standard trägt wie der Editor und nicht die nackten
+// createHero()-Defaults (Standardgesicht mit Narbe).
 // ACHTUNG Reihenfolge: NICHT sofort aufrufen, sondern erst nach compileAsync
 // (Aufruf unten in dessen .finally()). disposeObject() des Wegwerf-Modells,
 // während der Compiler seine Material-Liste abarbeitet, ließ three.js'
@@ -408,7 +408,7 @@ document.addEventListener('keydown', (e) => {
   setInputDevice('kb'); // R21 Aufgabe A.3: Prompts zeigen die zuletzt benutzte Eingabeart
   const wasDown = keys[e.code];
   keys[e.code] = true;
-  if (e.code === 'KeyQ' && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryGatling();
+  if (e.code === 'KeyQ' && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryFlurry();
   if (e.code === 'KeyF' && state.mode === 'playing' && !isEpisodeCutscene()) tryActivateOverdrive();
   // Friedensphase: E am Wachturm startet Welle 1. Der Radius allein tut es NICHT —
   // sonst beendet jeder, der von der Startposition aus stumpf W hält, die Ruhe nach
@@ -466,11 +466,11 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mousedown', (e) => {
   setInputDevice('kb');
   if (state.mode !== 'playing' || !pointerLocked) return;
-  if (e.button === 0) combat.tryPistol();
+  if (e.button === 0) combat.tryStrike();
   else if (e.button === 2) {
-    combat.tryBazooka();
-    // tryBazooka is gated by cooldown/attack — only kick if it actually fired
-    if (combat.attack && combat.attack.type === 'bazooka' && combat.attack.t === 0) {
+    combat.tryHeavyBlow();
+    // tryHeavyBlow is gated by cooldown/attack — only kick if it actually fired
+    if (combat.attack && combat.attack.type === 'heavyBlow' && combat.attack.t === 0) {
       window.__fovKick();
     }
   }
@@ -500,8 +500,8 @@ function requestPointerLockSafe() {
 // Maus-Pfad wird ersetzt, beide Geraete sind jederzeit gleichzeitig wirksam.
 // Belegung laut Auftrag: linker Stick Laufen, rechter Stick Kamera, A Springen,
 // X Angriff, B Ausweichen, Y Interakt (E), Start Pause/Start, D-Pad+A Dialog.
-// Builder-Zugabe darueber hinaus (sonst waere ein Pad-Spieler von Gatling/Bazooka/
-// Overdrive/Renn-Umschalter ausgesperrt — Felix urteilt): RT Bazooka, LT Gatling,
+// Builder-Zugabe darueber hinaus (sonst waere ein Pad-Spieler von Flurry/HeavyBlow/
+// Overdrive/Renn-Umschalter ausgesperrt — Felix urteilt): RT HeavyBlow, LT Flurry,
 // RB Overdrive, L3 Renn-Umschalter. Feintuning (Deadzone/Tempo) = Felix' Pad-Hand.
 const PAD_BTN = {
   A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7,
@@ -619,14 +619,14 @@ function pollGamepad(rawDt) {
   }
 
   if (just(PAD_BTN.B)) tryDodge(); // eigene Torwaechter (playing, kein Cutscene, Cooldown)
-  if (just(PAD_BTN.X) && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryPistol();
+  if (just(PAD_BTN.X) && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryStrike();
   if (just(PAD_BTN.RT) && state.mode === 'playing' && !isEpisodeCutscene()) {
-    combat.tryBazooka();
-    if (combat.attack && combat.attack.type === 'bazooka' && combat.attack.t === 0) {
+    combat.tryHeavyBlow();
+    if (combat.attack && combat.attack.type === 'heavyBlow' && combat.attack.t === 0) {
       window.__fovKick(); // gleicher Kick wie der Rechtsklick-Pfad
     }
   }
-  if (just(PAD_BTN.LT) && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryGatling();
+  if (just(PAD_BTN.LT) && state.mode === 'playing' && !isEpisodeCutscene()) combat.tryFlurry();
   if (just(PAD_BTN.RB) && state.mode === 'playing' && !isEpisodeCutscene()) tryActivateOverdrive();
   if (just(PAD_BTN.Y)) interactPressed();
   if (just(PAD_BTN.L3)) toggleRun();
@@ -1090,7 +1090,7 @@ function updateDangerCue(rawDt) {
   }
 }
 
-// FOV kick: 68 -> 74 over 120ms, back over 200ms (used on Bazooka fire)
+// FOV kick: 68 -> 74 over 120ms, back over 200ms (used on HeavyBlow fire)
 const FOV_BASE = 68;
 const FOV_PEAK = 74;
 const FOV_UP = 0.12;
@@ -1488,7 +1488,7 @@ function peaceWalkSpeed() {
 // vorbei. Strg+S (rückwärts), Strg+D (rechts) und Strg+A (links) öffnen Dialoge, die
 // den Fokus stehlen: das keyup kommt nie an, keys[...] bleibt true, und der Spieler
 // kehrt zu einer Figur zurück, die von allein seitwärts sprintet. Auf macOS ist
-// Strg+Klick zusätzlich ein echter Rechtsklick — aus der Pistole würde die Bazooka.
+// Strg+Klick zusätzlich ein echter Rechtsklick — aus dem Strike würde der Heavy Blow.
 // Warum kein Halten? Ein Halte-Modifier bräuchte eine bequeme Daumen-/Kleinfinger-Taste,
 // aber alle sind vergeben oder reserviert: Shift = Ausweichrolle, Strg/Alt = Browser,
 // Space = Sprung. R liegt zwar gut erreichbar über D — aber unter DEMSELBEN Zeigefinger,
@@ -1938,7 +1938,7 @@ function endGame(won) {
   combat.overdriveActive = false;
   player.speed = basePlayerSpeed();
   if (overdriveVignetteEl) overdriveVignetteEl.style.opacity = '0';
-  // a mid-swing gatling burst must not bleed hits/sfx into the victory orbit
+  // a mid-swing flurry burst must not bleed hits/sfx into the victory orbit
   combat.attack = null;
 
   if (!won) {

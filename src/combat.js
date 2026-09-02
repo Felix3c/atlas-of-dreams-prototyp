@@ -2,13 +2,13 @@
 import * as THREE from 'three';
 import { FX } from './fx.js';
 
-// pacing pass: punches land fast and chain fast. Pistol hits at ~reachTime after
+// pacing pass: punches land fast and chain fast. Strike hits at ~reachTime after
 // click (hero's 50ms anticipation overlaps the ramp), cooldown barely longer than
-// the swing so mashing feels rapid. Bazooka keeps its heavy 0.2s reach — its dead
+// the swing so mashing feels rapid. HeavyBlow keeps its heavy 0.2s reach — its dead
 // time was cut by shortening the shared wind-up in hero.js, not the stretch.
-const PISTOL = { damage: 26, range: 15, cooldown: 0.22, knock: 7, reachTime: 0.11 };
-const BAZOOKA = { damage: 45, range: 11, cooldown: 3.0, knock: 14, reachTime: 0.2, arc: 0.6 };
-const GATLING = { damage: 5, range: 13, cooldown: 6.0, duration: 1.6, interval: 0.055, knock: 2.5, arc: 0.75 };
+const STRIKE = { damage: 26, range: 15, cooldown: 0.22, knock: 7, reachTime: 0.11 };
+const HEAVY_BLOW = { damage: 45, range: 11, cooldown: 3.0, knock: 14, reachTime: 0.2, arc: 0.6 };
+const FLURRY = { damage: 5, range: 13, cooldown: 6.0, duration: 1.6, interval: 0.055, knock: 2.5, arc: 0.75 };
 
 // Augenhöhen-Offset für aimPointForward — konstant, wird nie mutiert (add() liest nur)
 const AIM_EYE_OFFSET = new THREE.Vector3(0, 1.4, 0);
@@ -22,9 +22,9 @@ const OVERDRIVE_FINISH_KNOCK_MULT = 1.8;
 
 // per-attack hit presentation (reused, never allocated per hit)
 const HIT_OPTS_DEFAULT = { hitStop: 0, speedLines: false };
-const HIT_OPTS_PISTOL = { hitStop: 70, speedLines: false };
-const HIT_OPTS_BAZOOKA = { hitStop: 120, speedLines: true };
-const HIT_OPTS_GATLING = { hitStop: 0, speedLines: true };
+const HIT_OPTS_STRIKE = { hitStop: 70, speedLines: false };
+const HIT_OPTS_HEAVY_BLOW = { hitStop: 120, speedLines: true };
+const HIT_OPTS_FLURRY = { hitStop: 0, speedLines: true };
 
 // ---------- particle pool (single Points cloud) ----------
 class ParticlePool {
@@ -112,18 +112,18 @@ export class Combat {
     this.hooks = hooks;
     this.particles = new ParticlePool(scene);
 
-    this.cdPistol = 0;
-    this.cdBazooka = 0;
-    this.cdGatling = 0;
+    this.cdStrike = 0;
+    this.cdHeavyBlow = 0;
+    this.cdFlurry = 0;
 
     // OVERDRIVE — main.js flips this on/off; scales damage + attack tempo here
     this.overdriveActive = false;
 
     // active attack: {type, t, duration, target(Vector3), enemy, which, hitDone}
     this.attack = null;
-    this.gatlingTimer = 0;
-    this.gatlingLeft = 0;
-    this.gatlingSide = 'right';
+    this.flurryTimer = 0;
+    this.flurryLeft = 0;
+    this.flurrySide = 'right';
 
     this.shake = 0;
     this._camDir = new THREE.Vector3();
@@ -134,7 +134,7 @@ export class Combat {
     // anime hit effects (starbursts, speed lines, trails, pips, dust)
     this.fx = new FX(scene);
     this._impact = new THREE.Vector3();
-    this._gatlingTarget = new THREE.Vector3();
+    this._flurryTarget = new THREE.Vector3();
     this._shoulderW = new THREE.Vector3();
     this._fistW = new THREE.Vector3();
     // watch knocked-back enemies so we can puff dust where they land
@@ -244,48 +244,48 @@ export class Combat {
 
   // ---- attacks ----
 
-  tryPistol() {
-    if (this.cdPistol > 0 || this.attack) return;
+  tryStrike() {
+    if (this.cdStrike > 0 || this.attack) return;
     const tempo = this.overdriveActive ? OVERDRIVE_TEMPO_MULT : 1;
-    this.cdPistol = PISTOL.cooldown / tempo;
-    const enemy = this.pickTarget(PISTOL.range);
+    this.cdStrike = STRIKE.cooldown / tempo;
+    const enemy = this.pickTarget(STRIKE.range);
     const target = enemy
       ? enemy.group.position.clone().setY(enemy.height * 0.55)
-      : this.aimPointForward(PISTOL.range * 0.7).clone();
+      : this.aimPointForward(STRIKE.range * 0.7).clone();
     if (enemy) {
       target.x = enemy.group.position.x;
       target.z = enemy.group.position.z;
       target.y = enemy.group.position.y + enemy.height * 0.55;
     }
-    const reachTime = PISTOL.reachTime / tempo;
+    const reachTime = STRIKE.reachTime / tempo;
     this.attack = {
-      type: 'pistol', t: 0, duration: reachTime * 2,
+      type: 'strike', t: 0, duration: reachTime * 2,
       reachTime, target, enemy, which: 'right', hitDone: false,
     };
     // start hero's anticipation wind-up on the click frame, not the next update
     this.hero.stretchArm('right', target, 0);
   }
 
-  tryBazooka() {
-    if (this.cdBazooka > 0 || this.attack) return;
+  tryHeavyBlow() {
+    if (this.cdHeavyBlow > 0 || this.attack) return;
     const tempo = this.overdriveActive ? OVERDRIVE_TEMPO_MULT : 1;
-    this.cdBazooka = BAZOOKA.cooldown / tempo;
-    const target = this.aimPointForward(BAZOOKA.range * 0.65).clone();
-    const reachTime = BAZOOKA.reachTime / tempo;
+    this.cdHeavyBlow = HEAVY_BLOW.cooldown / tempo;
+    const target = this.aimPointForward(HEAVY_BLOW.range * 0.65).clone();
+    const reachTime = HEAVY_BLOW.reachTime / tempo;
     this.attack = {
-      type: 'bazooka', t: 0, duration: reachTime * 2,
+      type: 'heavyBlow', t: 0, duration: reachTime * 2,
       reachTime, target, enemy: null, which: 'both', hitDone: false,
     };
     // kill dead time: the wind-up clock starts on the click frame itself
     this.hero.stretchArm('both', target, 0);
   }
 
-  tryGatling() {
-    if (this.cdGatling > 0 || this.attack) return;
+  tryFlurry() {
+    if (this.cdFlurry > 0 || this.attack) return;
     const tempo = this.overdriveActive ? OVERDRIVE_TEMPO_MULT : 1;
-    this.cdGatling = GATLING.cooldown / tempo;
-    this.attack = { type: 'gatling', t: 0, duration: GATLING.duration / tempo, which: 'both' };
-    this.gatlingTimer = 0;
+    this.cdFlurry = FLURRY.cooldown / tempo;
+    this.attack = { type: 'flurry', t: 0, duration: FLURRY.duration / tempo, which: 'both' };
+    this.flurryTimer = 0;
   }
 
   hitEnemy(enemy, damage, knock, impactColor = 0xffd27a, opts = HIT_OPTS_DEFAULT) {
@@ -335,9 +335,9 @@ export class Combat {
   }
 
   update(dt, t) {
-    this.cdPistol = Math.max(0, this.cdPistol - dt);
-    this.cdBazooka = Math.max(0, this.cdBazooka - dt);
-    this.cdGatling = Math.max(0, this.cdGatling - dt);
+    this.cdStrike = Math.max(0, this.cdStrike - dt);
+    this.cdHeavyBlow = Math.max(0, this.cdHeavyBlow - dt);
+    this.cdFlurry = Math.max(0, this.cdFlurry - dt);
     this.shake = Math.max(0, this.shake - dt * 1.8);
     this.particles.update(dt);
     this.fx.update(dt, this.camera);
@@ -362,7 +362,7 @@ export class Combat {
     if (!atk) { this.fx.hideTrails(); return; }
     atk.t += dt;
 
-    if (atk.type === 'pistol' || atk.type === 'bazooka') {
+    if (atk.type === 'strike' || atk.type === 'heavyBlow') {
       // out-and-back reach curve
       const half = atk.reachTime;
       let reach;
@@ -376,16 +376,16 @@ export class Combat {
       // impact at full extension
       if (!atk.hitDone && atk.t >= half) {
         atk.hitDone = true;
-        if (atk.type === 'pistol') {
+        if (atk.type === 'strike') {
           if (atk.enemy && atk.enemy.alive) {
-            this.hitEnemy(atk.enemy, PISTOL.damage, PISTOL.knock, 0xffd27a, HIT_OPTS_PISTOL);
+            this.hitEnemy(atk.enemy, STRIKE.damage, STRIKE.knock, 0xffd27a, HIT_OPTS_STRIKE);
           } else {
             this.particles.burst(atk.target, 0xcbb48a, 6, 3);
           }
         } else {
-          const targets = this.enemiesInCone(BAZOOKA.range, BAZOOKA.arc);
+          const targets = this.enemiesInCone(HEAVY_BLOW.range, HEAVY_BLOW.arc);
           if (targets.length) {
-            for (const e of targets) this.hitEnemy(e, BAZOOKA.damage, BAZOOKA.knock, 0xff8a4a, HIT_OPTS_BAZOOKA);
+            for (const e of targets) this.hitEnemy(e, HEAVY_BLOW.damage, HEAVY_BLOW.knock, 0xff8a4a, HIT_OPTS_HEAVY_BLOW);
             this.addShake(0.22);
           } else {
             this.particles.burst(atk.target, 0xcbb48a, 8, 4);
@@ -398,17 +398,17 @@ export class Combat {
         this.fx.hideTrails();
         this.attack = null;
       }
-    } else if (atk.type === 'gatling') {
-      this.gatlingTimer -= dt;
+    } else if (atk.type === 'flurry') {
+      this.flurryTimer -= dt;
       // rapid alternating jabs
-      const enemy = this.pickTarget(GATLING.range, 0.8);
+      const enemy = this.pickTarget(FLURRY.range, 0.8);
       const target = enemy
-        ? this._gatlingTarget.set(
+        ? this._flurryTarget.set(
             enemy.group.position.x + (Math.random() - 0.5) * 0.8,
             enemy.group.position.y + enemy.height * (0.35 + Math.random() * 0.4),
             enemy.group.position.z + (Math.random() - 0.5) * 0.8,
           )
-        : this._gatlingTarget.copy(this.aimPointForward(GATLING.range * 0.6));
+        : this._flurryTarget.copy(this.aimPointForward(FLURRY.range * 0.6));
 
       // flickering both-arm blur + bright streaks so the barrage reads from behind
       // (wider flicker band = faster-looking strobe at the new hit rate)
@@ -421,13 +421,13 @@ export class Combat {
       this._fistW.lerpVectors(this._shoulderW, target, flicker * 0.9);
       this.fx.setTrail(1, this._shoulderW, this._fistW, flicker * 0.8);
 
-      if (this.gatlingTimer <= 0) {
-        this.gatlingTimer = GATLING.interval / (this.overdriveActive ? OVERDRIVE_TEMPO_MULT : 1);
-        const targets = this.enemiesInCone(GATLING.range, GATLING.arc);
+      if (this.flurryTimer <= 0) {
+        this.flurryTimer = FLURRY.interval / (this.overdriveActive ? OVERDRIVE_TEMPO_MULT : 1);
+        const targets = this.enemiesInCone(FLURRY.range, FLURRY.arc);
         if (targets.length) {
           // hit a random target in cone each tick
           const e = targets[(Math.random() * targets.length) | 0];
-          this.hitEnemy(e, GATLING.damage, GATLING.knock, 0xffe08a, HIT_OPTS_GATLING);
+          this.hitEnemy(e, FLURRY.damage, FLURRY.knock, 0xffe08a, HIT_OPTS_FLURRY);
         }
       }
 
@@ -441,15 +441,15 @@ export class Combat {
 
   get cooldowns() {
     return {
-      pistol: this.cdPistol / PISTOL.cooldown,
-      bazooka: this.cdBazooka / BAZOOKA.cooldown,
-      gatling: this.cdGatling / GATLING.cooldown,
+      strike: this.cdStrike / STRIKE.cooldown,
+      heavyBlow: this.cdHeavyBlow / HEAVY_BLOW.cooldown,
+      flurry: this.cdFlurry / FLURRY.cooldown,
     };
   }
 
   reset() {
     this.attack = null;
-    this.cdPistol = this.cdBazooka = this.cdGatling = 0;
+    this.cdStrike = this.cdHeavyBlow = this.cdFlurry = 0;
     this.shake = 0;
     this.overdriveActive = false;
     this.hero.relaxArms();

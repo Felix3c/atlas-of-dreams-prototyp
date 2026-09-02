@@ -35,9 +35,9 @@ export class UI {
       winStats: document.getElementById('win-stats'),
       loseStats: document.getElementById('lose-stats'),
       abilities: {
-        pistol: document.querySelector('#ab-pistol .cd'),
-        bazooka: document.querySelector('#ab-bazooka .cd'),
-        gatling: document.querySelector('#ab-gatling .cd'),
+        strike: document.querySelector('#ab-strike .cd'),
+        heavyBlow: document.querySelector('#ab-heavyBlow .cd'),
+        flurry: document.querySelector('#ab-flurry .cd'),
       },
     };
     this._bannerTimeout = null;
@@ -57,7 +57,7 @@ export class UI {
     this._wave = { title: null, remaining: null };
     this._calm = { title: null, sub: null };
     this._od = { frac: null, ready: null, active: null };
-    this._cd = { pistol: null, bazooka: null, gatling: null };
+    this._cd = { strike: null, heavyBlow: null, flurry: null };
   }
 
   // KAI's short banter line — shows near the companion tag, fades after ~2.5s.
@@ -158,13 +158,13 @@ export class UI {
 
   setCooldowns(cd) {
     // die drei Balken stehen die meiste Zeit still (bereit = 0) — nur bei Änderung schreiben
-    if (cd.pistol === this._cd.pistol && cd.bazooka === this._cd.bazooka && cd.gatling === this._cd.gatling) return;
-    this._cd.pistol = cd.pistol;
-    this._cd.bazooka = cd.bazooka;
-    this._cd.gatling = cd.gatling;
-    this.el.abilities.pistol.style.transform = `scaleY(${cd.pistol})`;
-    this.el.abilities.bazooka.style.transform = `scaleY(${cd.bazooka})`;
-    this.el.abilities.gatling.style.transform = `scaleY(${cd.gatling})`;
+    if (cd.strike === this._cd.strike && cd.heavyBlow === this._cd.heavyBlow && cd.flurry === this._cd.flurry) return;
+    this._cd.strike = cd.strike;
+    this._cd.heavyBlow = cd.heavyBlow;
+    this._cd.flurry = cd.flurry;
+    this.el.abilities.strike.style.transform = `scaleY(${cd.strike})`;
+    this.el.abilities.heavyBlow.style.transform = `scaleY(${cd.heavyBlow})`;
+    this.el.abilities.flurry.style.transform = `scaleY(${cd.flurry})`;
   }
 
   showBanner(text, sub = '') {
